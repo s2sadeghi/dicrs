@@ -124,9 +124,9 @@ impl App {
 
     fn update_by_index(&mut self, i: i32) {
         let mut new_index: i32 = max(0, self.selected_index as i32 + i);
-        new_index = min(new_index, self.word_index.len() as i32 -1);
+        new_index = min(new_index, self.word_index.len() as i32 - 1);
         self.selected_index = new_index as usize;
-        self.definition = self.query_db_by_index(self.selected_index +1).definition;
+        self.definition = self.query_db_by_index(self.selected_index + 1).definition;
     }
 
     fn change_database(&mut self, i: i32) {
@@ -151,10 +151,7 @@ impl App {
     fn query_db(&mut self, word: String) -> DicEntry {
         let sql = "SELECT ROWID, word, definition FROM dictionary WHERE word LIKE :query";
         let wild_card_query = format!("{}%", word);
-        let mut stmt = self
-            .conn
-            .prepare(sql)
-            .unwrap();
+        let mut stmt = self.conn.prepare(sql).unwrap();
         let mut res = DicEntry::default();
         let mut rows = stmt
             .query_map([(wild_card_query)], |row| {
@@ -178,10 +175,7 @@ impl App {
     fn query_db_by_index(&mut self, word: usize) -> DicEntry {
         let sql = "SELECT ROWID, word, definition FROM dictionary WHERE ROWID = :query";
         let wild_card_query = word.to_string();
-        let mut stmt = self
-            .conn
-            .prepare(sql)
-            .unwrap();
+        let mut stmt = self.conn.prepare(sql).unwrap();
         let mut res = DicEntry::default();
         let mut rows = stmt
             .query_map([(wild_card_query)], |row| {

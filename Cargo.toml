@@ -2,6 +2,10 @@
 name = "dicrs"
 version = "0.1.0"
 edition = "2021"
+authors = ["s2sadeghi"]
+description = "A simple dictionary written in rust"
+repository = "https://github.com/s2sadeghi/dicrs"
+license = "GPL-3.0"
 
 [dependencies]
 clipboard = "0.5.0"
@@ -9,3 +13,14 @@ color-eyre = "0.6.3"
 crossterm = "0.27.0"
 ratatui = "0.26.3"
 rusqlite = "0.31.0"
+
+
+# [build]
+# rustflags = ["-C", "target-cpu=native"]
+
+# [profile.release]
+# panic = "abort"
+# opt-level = "z"
+# strip = "symbols"
+# codegen-units = 1
+# lto = "fat"
