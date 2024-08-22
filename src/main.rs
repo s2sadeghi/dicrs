@@ -14,7 +14,7 @@ use rusqlite::Connection;
 
 use clipboard::{ClipboardContext, ClipboardProvider};
 
-static DICPATH: &str = "dics/";
+static DICPATH: &str = "/usr/share/dicrs/";
 static DICEXTENSION: &str = ".db";
 // static APPTERMTITLE: &str = "\x1b]0;dic.rs\x07";
 
@@ -124,10 +124,9 @@ impl App {
 
     fn update_by_index(&mut self, i: i32) {
         let mut new_index: i32 = max(0, self.selected_index as i32 + i);
-        new_index = min(new_index, self.word_index.len() as i32 - 1);
+        new_index = min(new_index, self.word_index.len() as i32 -1);
         self.selected_index = new_index as usize;
-        let new_word = self.word_index[self.selected_index].clone();
-        self.definition = self.query_db(&new_word).definition;
+        self.definition = self.query_db_by_index(self.selected_index +1).definition;
     }
 
     fn change_database(&mut self, i: i32) {
@@ -149,15 +148,43 @@ impl App {
         );
     }
 
-    fn query_db(&mut self, query: &str) -> DicEntry {
+    fn query_db(&mut self, word: String) -> DicEntry {
+        let sql = "SELECT ROWID, word, definition FROM dictionary WHERE word LIKE :query";
+        let wild_card_query = format!("{}%", word);
         let mut stmt = self
             .conn
-            .prepare("SELECT ROWID, word, definition FROM dictionary WHERE word LIKE :query")
+            .prepare(sql)
             .unwrap();
         let mut res = DicEntry::default();
-        let wild_card_query = format!("{}%", query);
         let mut rows = stmt
-            .query_map([(&wild_card_query)], |row| {
+            .query_map([(wild_card_query)], |row| {
+                let rowid: u32 = row.get(0)?;
+                let word: String = row.get(1)?;
+                let def: String = row.get(2)?;
+                Ok((rowid, word, def))
+            })
+            .unwrap();
+
+        if let Some(row) = rows.next() {
+            let (rowid, word, def) = row.unwrap();
+            res.index = (rowid - 1) as usize;
+            res.word = word;
+            res.definition = def.replace('\r', "\n");
+        } else {
+            res.definition = "Not found!".to_string();
+        }
+        res
+    }
+    fn query_db_by_index(&mut self, word: usize) -> DicEntry {
+        let sql = "SELECT ROWID, word, definition FROM dictionary WHERE ROWID = :query";
+        let wild_card_query = word.to_string();
+        let mut stmt = self
+            .conn
+            .prepare(sql)
+            .unwrap();
+        let mut res = DicEntry::default();
+        let mut rows = stmt
+            .query_map([(wild_card_query)], |row| {
                 let rowid: u32 = row.get(0)?;
                 let word: String = row.get(1)?;
                 let def: String = row.get(2)?;
@@ -199,7 +226,7 @@ impl App {
                         (Right, KeyModifiers::NONE) => self.change_database(1),
                         (Enter, KeyModifiers::NONE) => {
                             let query_term: String = self.input.drain(..).collect();
-                            let entry = self.query_db(&query_term);
+                            let entry = self.query_db(query_term);
                             self.definition = entry.definition;
                             self.selected_index = entry.index;
                         }
