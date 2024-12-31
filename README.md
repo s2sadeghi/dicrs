@@ -35,7 +35,7 @@
     ```
 
 3. add your dictionaries to
-    .local/share/dicrs/dictionaries
+    `.local/share/dicrs/dictionaries`
 
 4. Run the binary:
    ```bash
@@ -58,7 +58,7 @@
 - `Alt + M`: Toggle Compact Mode.
 
 ### Managing Leitner Entries:
-- `~ (\`)`: Add the current word and its definition to Leitner.
+- `~` (`): Add the current word and its definition to Leitner.
 
 ---
 
