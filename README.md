@@ -1,7 +1,7 @@
 # Dicrs
 
 **Dicrs** is a simple and efficient dictionary application written in Rust.
-
+![Alt text](screenshot.png?raw=true "dicrs")
 ---
 
 ### Leitner System:
@@ -57,7 +57,7 @@
 - `Alt + M`: Toggle Compact Mode.
 
 ### Managing Leitner Entries:
-- `\``: Add the current word and its definition to Leitner.
+- `~ (\`)`: Add the current word and its definition to Leitner.
 
 ---
 
