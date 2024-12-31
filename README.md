@@ -1,6 +1,7 @@
 # Dicrs
 
 **Dicrs** is a simple and efficient dictionary application written in Rust.
+---
 ![Alt text](screenshot.png?raw=true "dicrs")
 ---
 
