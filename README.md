@@ -85,6 +85,7 @@ cargo build --release --no-default-features
 | `Alt + M`            | Toggle Compact Mode                       |
 | `Up/Down Arrows`     | Navigate entries                          |
 | `Shift + Up/Down`    | Jump 10 entries                           |
+| `Page Up/Page Down`  | Scroll definition                         |
 | `Left/Right Arrows`  | Switch between databases                  |
 | `Backspace`          | Delete last character in the search input |
 | Any Character        | Add character to the search input         |
