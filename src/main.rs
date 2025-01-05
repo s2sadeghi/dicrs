@@ -27,7 +27,7 @@ use leitner::Leitner;
 #[derive(PartialEq)]
 enum Mode {
     Default,
-    Compact,
+    Minimal,
     #[cfg(feature = "leitner")]
     Leitner,
 }
@@ -44,6 +44,7 @@ struct App {
     #[cfg(feature = "leitner")]
     leitner: Leitner,
     mode: Mode,
+    scroll: u16,
 }
 
 #[derive(Default)]
@@ -66,7 +67,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let starting_mode = if size.height > 16 && size.width > 54 {
         Mode::Default
     } else {
-        Mode::Compact
+        Mode::Minimal
     };
     crossterm::execute!(io::stdout(), SetTitle("dic.rs")).unwrap();
     let mut app = App::default(dicpath.clone(), starting_mode);
@@ -140,6 +141,7 @@ impl App {
             )
             .unwrap(),
             mode,
+            scroll: 0,
         }
     }
 
@@ -206,6 +208,7 @@ impl App {
         } else {
             self.definition = "Not found!".to_string();
         }
+        self.scroll = 0;
     }
     fn query_db_by_index(&mut self, word_index: usize) -> DicEntry {
         let sql = "SELECT ROWID, word, definition FROM dictionary WHERE ROWID = :query";
@@ -229,6 +232,7 @@ impl App {
         } else {
             res.definition = "Not found!".to_string();
         }
+        self.scroll = 0;
         res
     }
 
@@ -263,11 +267,17 @@ impl App {
                                 self.update_by_index(0);
                             }
                             (Char('m'), KeyModifiers::ALT) => {
-                                self.mode = Mode::Compact;
+                                self.mode = Mode::Minimal;
                                 self.update_by_index(0);
                             }
                             (Up, KeyModifiers::NONE) => self.leitner.update_index_by(-1),
                             (Down, KeyModifiers::NONE) => self.leitner.update_index_by(1),
+                            (PageDown, KeyModifiers::NONE) => {
+                                self.scroll += 1;
+                            }
+                            (PageUp, KeyModifiers::NONE) => {
+                                self.scroll = self.scroll.saturating_sub(1)
+                            }
                             (Enter, KeyModifiers::NONE) | (Char(' '), KeyModifiers::NONE) => {
                                 self.definition =
                                     self.leitner.get_definition(self.leitner.selected_index);
@@ -282,8 +292,8 @@ impl App {
                             ctx.set_contents(self.definition.to_owned()).unwrap()
                         }
                         (Char('m'), KeyModifiers::ALT) => {
-                            self.mode = if self.mode != Mode::Compact {
-                                Mode::Compact
+                            self.mode = if self.mode != Mode::Minimal {
+                                Mode::Minimal
                             } else {
                                 Mode::Default
                             };
@@ -312,6 +322,10 @@ Alt + L / Alt + M: Switch to the Default / Minimal Mode.\n\
                         (Down, KeyModifiers::SHIFT) => self.update_by_index(10),
                         (Left, KeyModifiers::NONE) => self.change_database(-1),
                         (Right, KeyModifiers::NONE) => self.change_database(1),
+                        (PageDown, KeyModifiers::NONE) => {
+                            self.scroll += 1;
+                        }
+                        (PageUp, KeyModifiers::NONE) => self.scroll = self.scroll.saturating_sub(1),
                         (Enter, KeyModifiers::NONE) => {
                             let query_term: String = self.input.drain(..).collect();
                             self.query_db(query_term);
@@ -336,12 +350,12 @@ Alt + L / Alt + M: Switch to the Default / Minimal Mode.\n\
 fn ui(f: &mut Frame, app: &mut App) {
     match app.mode {
         Mode::Default => render_default_mode(f, app),
-        Mode::Compact => render_compact_mode(f, app),
+        Mode::Minimal => render_minimal_mode(f, app),
         Mode::Leitner => render_leitner_mode(f, app),
     }
 }
 
-fn render_default_mode(f: &mut Frame, app: &App) {
+fn render_default_mode(f: &mut Frame, app: &mut App) {
     let vertical = Layout::vertical([
         Constraint::Length(3),
         Constraint::Length((min(4, app.databases.len()) + 2) as u16),
@@ -381,14 +395,20 @@ fn render_default_mode(f: &mut Frame, app: &App) {
         .highlight_style(Style::default().fg(Color::Black).bg(Color::White));
     let mut state = ListState::default().with_selected(Some(min(app.selected_index, height / 2)));
     f.render_stateful_widget(word_index, words_area, &mut state);
-
+    let max_scroll = calculate_max_scroll(
+        app.definition.as_str(),
+        definition_area.width,
+        definition_area.height,
+    );
+    app.scroll = app.scroll.min(max_scroll);
     let definition = Paragraph::new(app.definition.as_str())
         .block(Block::default().borders(Borders::ALL).title("Definition"))
+        .scroll((app.scroll, 0))
         .wrap(Wrap { trim: true });
     f.render_widget(definition, definition_area);
 }
 
-fn render_compact_mode(f: &mut Frame, app: &App) {
+fn render_minimal_mode(f: &mut Frame, app: &mut App) {
     let vertical = Layout::vertical([
         Constraint::Length(3),
         Constraint::Min(5),
@@ -405,9 +425,16 @@ fn render_compact_mode(f: &mut Frame, app: &App) {
                 .title("Input"),
         );
     f.render_widget(input, input_area);
+    let max_scroll = calculate_max_scroll(
+        app.definition.as_str(),
+        definition_area.width,
+        definition_area.height,
+    );
+    app.scroll = app.scroll.min(max_scroll);
 
     let definition = Paragraph::new(app.definition.as_str())
         .block(Block::default().borders(Borders::ALL).title("Definition"))
+        .scroll((app.scroll, 0))
         .wrap(Wrap { trim: true });
     f.render_widget(definition, definition_area);
 
@@ -419,7 +446,7 @@ fn render_compact_mode(f: &mut Frame, app: &App) {
     f.render_widget(status, status_area);
 }
 
-fn render_leitner_mode(f: &mut Frame, app: &App) {
+fn render_leitner_mode(f: &mut Frame, app: &mut App) {
     let vertical = Layout::horizontal([Constraint::Length(18), Constraint::Min(24)]);
     let [words_area, definition_area] = vertical.areas(f.area());
     if app.leitner.word_index.is_empty() {
@@ -456,9 +483,23 @@ fn render_leitner_mode(f: &mut Frame, app: &App) {
     let mut state =
         ListState::default().with_selected(Some(min(app.leitner.selected_index, height / 2)));
     f.render_stateful_widget(word_index, words_area, &mut state);
+    let max_scroll = calculate_max_scroll(
+        app.definition.as_str(),
+        definition_area.width,
+        definition_area.height,
+    );
+    app.scroll = app.scroll.min(max_scroll);
 
     let definition = Paragraph::new(app.definition.as_str())
         .block(Block::default().borders(Borders::ALL).title("Definition"))
+        .scroll((app.scroll, 0))
         .wrap(Wrap { trim: true });
     f.render_widget(definition, definition_area);
+}
+fn calculate_max_scroll(content: &str, area_width: u16, area_height: u16) -> u16 {
+    let wrapped_lines = content
+        .lines()
+        .map(|line| (line.len() as u16).div_ceil(area_width - 2))
+        .sum::<u16>();
+    (wrapped_lines).saturating_sub(area_height / 2)
 }

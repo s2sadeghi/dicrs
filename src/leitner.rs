@@ -173,9 +173,7 @@ pub fn get_relative_date(date: NaiveDate) -> String {
     let today = chrono::Local::now().date_naive();
     let tomorrow = today + chrono::Duration::days(1);
 
-    if date < today {
-        return "".to_string();
-    } else if date == today {
+    if date <= today {
         return "Today".to_string();
     } else if date == tomorrow {
         return "Tomorrow".to_string();
