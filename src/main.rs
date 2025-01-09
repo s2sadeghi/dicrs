@@ -15,6 +15,7 @@ use ratatui::{prelude::*, widgets::*};
 
 use rusqlite::Connection;
 
+#[cfg(feature = "clipboard")]
 use clipboard::{ClipboardContext, ClipboardProvider};
 
 static DICEXTENSION: &str = ".db";
@@ -45,6 +46,8 @@ struct App {
     leitner: Leitner,
     mode: Mode,
     scroll: u16,
+    #[cfg(feature = "clipboard")]
+    clipboard: Option<ClipboardContext>,
 }
 
 #[derive(Default)]
@@ -60,7 +63,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     if !dicpath.exists() {
         fs::create_dir_all(&dicpath)?;
     }
-    let ctx: ClipboardContext = ClipboardProvider::new().unwrap();
     init_error_hooks()?;
     let terminal = init_terminal()?;
     let size = terminal.size().unwrap();
@@ -78,7 +80,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         ));
     }
     app.create(dicpath.join([app.databases.first().unwrap(), DICEXTENSION].concat()));
-    app.run(terminal, ctx)?;
+    #[cfg(feature = "clipboard")]
+    if let Ok(cb) = <ClipboardContext as ClipboardProvider>::new() {
+        app.clipboard = Some(cb);
+    }
+    app.run(terminal)?;
 
     restore_terminal()?;
 
@@ -116,6 +122,7 @@ fn restore_terminal() -> color_eyre::Result<()> {
 
 impl App {
     fn default(dicpath: PathBuf, mode: Mode) -> Self {
+        #[cfg(feature = "leitner")]
         let home_dir = std::env::var("HOME").expect("HOME environment variable not set");
         let mut databases: Vec<String> = Vec::new();
         for entry in fs::read_dir(&dicpath).unwrap() {
@@ -142,6 +149,8 @@ impl App {
             .unwrap(),
             mode,
             scroll: 0,
+            #[cfg(feature = "clipboard")]
+            clipboard: None,
         }
     }
 
@@ -236,11 +245,7 @@ impl App {
         res
     }
 
-    fn run(
-        &mut self,
-        mut terminal: Terminal<impl Backend>,
-        mut ctx: ClipboardContext,
-    ) -> io::Result<()> {
+    fn run(&mut self, mut terminal: Terminal<impl Backend>) -> io::Result<()> {
         loop {
             self.draw(&mut terminal)?;
             if let Event::Key(key) = event::read()? {
@@ -288,8 +293,11 @@ impl App {
                     }
                     match (key.code, key.modifiers) {
                         (Char('c'), KeyModifiers::CONTROL) => return Ok(()),
+                        #[cfg(feature = "clipboard")]
                         (Char('y'), KeyModifiers::CONTROL) => {
-                            ctx.set_contents(self.definition.to_owned()).unwrap()
+                            if let Some(ref mut cb) = self.clipboard {
+                                cb.set_contents(self.definition.to_owned()).unwrap()
+                            }
                         }
                         (Char('m'), KeyModifiers::ALT) => {
                             self.mode = if self.mode != Mode::Minimal {
@@ -320,19 +328,25 @@ Alt + L / Alt + M: Switch to the Default / Minimal Mode.\n\
                         (Down, KeyModifiers::NONE) => self.update_by_index(1),
                         (Up, KeyModifiers::SHIFT) => self.update_by_index(-10),
                         (Down, KeyModifiers::SHIFT) => self.update_by_index(10),
-                        (Left, KeyModifiers::NONE) => self.change_database(-1),
-                        (Right, KeyModifiers::NONE) => self.change_database(1),
+                        (Left, KeyModifiers::NONE) => {
+                            self.change_database(-1);
+                            self.query_db(self.input.to_string());
+                        }
+                        (Right, KeyModifiers::NONE) => {
+                            self.change_database(1);
+                            self.query_db(self.input.to_string());
+                        }
                         (PageDown, KeyModifiers::NONE) => {
                             self.scroll += 1;
                         }
                         (PageUp, KeyModifiers::NONE) => self.scroll = self.scroll.saturating_sub(1),
                         (Enter, KeyModifiers::NONE) => {
-                            let query_term: String = self.input.drain(..).collect();
-                            self.query_db(query_term);
+                            self.query_db(self.input.to_string());
                         }
-                        (Backspace, _) => {
+                        (Backspace, KeyModifiers::NONE) => {
                             self.input.pop();
                         }
+                        (Backspace, KeyModifiers::ALT) => delete_last_word(&mut self.input),
                         (Char(c), _) => self.input.push(c),
                         _ => {}
                     }
@@ -351,6 +365,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     match app.mode {
         Mode::Default => render_default_mode(f, app),
         Mode::Minimal => render_minimal_mode(f, app),
+        #[cfg(feature = "leitner")]
         Mode::Leitner => render_leitner_mode(f, app),
     }
 }
@@ -446,6 +461,7 @@ fn render_minimal_mode(f: &mut Frame, app: &mut App) {
     f.render_widget(status, status_area);
 }
 
+#[cfg(feature = "leitner")]
 fn render_leitner_mode(f: &mut Frame, app: &mut App) {
     let vertical = Layout::horizontal([Constraint::Length(18), Constraint::Min(24)]);
     let [words_area, definition_area] = vertical.areas(f.area());
@@ -502,4 +518,14 @@ fn calculate_max_scroll(content: &str, area_width: u16, area_height: u16) -> u16
         .map(|line| (line.len() as u16).div_ceil(area_width - 2))
         .sum::<u16>();
     (wrapped_lines).saturating_sub(area_height / 2)
+}
+
+fn delete_last_word(buffer: &mut String) {
+    if let Some(pos) = buffer.rfind(|c: char| !c.is_whitespace()) {
+        let last_space = buffer[..pos].rfind(|c: char| c.is_whitespace());
+        match last_space {
+            Some(idx) => buffer.truncate(idx + 1),
+            None => buffer.clear(),
+        }
+    }
 }
