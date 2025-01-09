@@ -88,6 +88,7 @@ cargo build --release --no-default-features
 | `Page Up/Page Down`  | Scroll definition                         |
 | `Left/Right Arrows`  | Switch between databases                  |
 | `Backspace`          | Delete last character in the search input |
+| `Alt + Backspace`    | Delete last word in the search input      |
 | Any Character        | Add character to the search input         |
 
 ---
