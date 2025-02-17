@@ -28,7 +28,7 @@ use leitner::Leitner;
 #[derive(PartialEq)]
 enum Mode {
     Default,
-    Minimal,
+    Mono,
     #[cfg(feature = "leitner")]
     Leitner,
 }
@@ -65,14 +65,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     init_error_hooks()?;
     let terminal = init_terminal()?;
-    let size = terminal.size().unwrap();
-    let starting_mode = if size.height > 16 && size.width > 54 {
-        Mode::Default
-    } else {
-        Mode::Minimal
-    };
     crossterm::execute!(io::stdout(), SetTitle("dic.rs")).unwrap();
-    let mut app = App::default(dicpath.clone(), starting_mode);
+    let mut app = App::default(dicpath.clone());
     if app.databases.is_empty() {
         restore_terminal()?;
         return Err(Box::<dyn Error>::from(
@@ -121,7 +115,7 @@ fn restore_terminal() -> color_eyre::Result<()> {
 }
 
 impl App {
-    fn default(dicpath: PathBuf, mode: Mode) -> Self {
+    fn default(dicpath: PathBuf) -> Self {
         #[cfg(feature = "leitner")]
         let home_dir = std::env::var("HOME").expect("HOME environment variable not set");
         let mut databases: Vec<String> = Vec::new();
@@ -132,6 +126,11 @@ impl App {
             let filename = filename.unwrap().to_string().replace(DICEXTENSION, "");
             databases.push(filename);
         }
+        let mode = if databases.len() > 1 {
+            Mode::Default
+        } else {
+            Mode::Mono
+        };
         Self {
             input: String::new(),
             definition: String::new(),
@@ -272,7 +271,7 @@ impl App {
                                 self.update_by_index(0);
                             }
                             (Char('m'), KeyModifiers::ALT) => {
-                                self.mode = Mode::Minimal;
+                                self.mode = Mode::Mono;
                                 self.update_by_index(0);
                             }
                             (Up, KeyModifiers::NONE) => self.leitner.update_index_by(-1),
@@ -300,8 +299,8 @@ impl App {
                             }
                         }
                         (Char('m'), KeyModifiers::ALT) => {
-                            self.mode = if self.mode != Mode::Minimal {
-                                Mode::Minimal
+                            self.mode = if self.mode != Mode::Mono {
+                                Mode::Mono
                             } else {
                                 Mode::Default
                             };
@@ -314,7 +313,7 @@ impl App {
                                 "Enter or Space: Show the definition of the selected word.\n\
 Y: Mark the current word as \"correct\" and review it again later.\n\
 N: Mark the current word as \"incorrect\" and review it sooner.\n\
-Alt + L / Alt + M: Switch to the Default / Minimal Mode.\n\
+Alt + L / Alt + M: Switch to the Default / Mono Mode.\n\
 ↑: Move the selection up in the word index.\n\
 ↓: Move the selection down in the word index.\n"
                                     .to_string();
@@ -364,7 +363,7 @@ Alt + L / Alt + M: Switch to the Default / Minimal Mode.\n\
 fn ui(f: &mut Frame, app: &mut App) {
     match app.mode {
         Mode::Default => render_default_mode(f, app),
-        Mode::Minimal => render_minimal_mode(f, app),
+        Mode::Mono => render_mono_mode(f, app),
         #[cfg(feature = "leitner")]
         Mode::Leitner => render_leitner_mode(f, app),
     }
@@ -373,10 +372,10 @@ fn ui(f: &mut Frame, app: &mut App) {
 fn render_default_mode(f: &mut Frame, app: &mut App) {
     let vertical = Layout::vertical([
         Constraint::Length(3),
-        Constraint::Length((min(4, app.databases.len()) + 2) as u16),
         Constraint::Min(5),
+        Constraint::Length(1),
     ]);
-    let [input_area, databases_area, rest_area] = vertical.areas(f.area());
+    let [input_area, rest_area, databases_area] = vertical.areas(f.area());
 
     let vertical = Layout::horizontal([Constraint::Length(18), Constraint::Min(0)]);
     let [words_area, definition_area] = vertical.areas(rest_area);
@@ -391,15 +390,30 @@ fn render_default_mode(f: &mut Frame, app: &mut App) {
         );
     f.render_widget(input, input_area);
 
-    let databases = List::new(app.databases.clone())
-        .block(Block::default().borders(Borders::ALL).title("Dictionaries"))
-        .highlight_style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        );
-    let mut state = ListState::default().with_selected(Some(app.dictionary_index));
-    f.render_stateful_widget(databases, databases_area, &mut state);
+    let highlighted_databases: Vec<Span> = app.databases
+        .iter()
+        .enumerate()
+        .map(|(i, db)| {
+            let db = db.to_string() + " ";
+            if i == app.dictionary_index {
+                Span::styled(db, Style::default().fg(Color::Yellow).bold())
+            } else {
+                Span::raw(db)
+            }
+        })
+        .collect();
+    let db_lengths: Vec<usize> = app.databases.iter().map(|db| db.len() + 1).collect();
+    let total_length: usize = db_lengths.iter().sum();
+    let selected_position: usize = db_lengths.iter().take(app.dictionary_index).sum();
+    let viewport_width = databases_area.width as usize;
+    
+    let scroll_x = if viewport_width >= total_length {
+        0 
+    } else {
+        selected_position.saturating_sub(viewport_width.saturating_sub(db_lengths[app.dictionary_index]) / 2)
+    };
+    let databases = Paragraph::new(Line::from(highlighted_databases)).scroll((0,scroll_x as u16));
+    f.render_widget(databases, databases_area);
 
     let height = words_area.as_size().height as usize - 2;
     let before = max(app.selected_index as isize - height as isize / 2, 0) as usize;
@@ -423,13 +437,12 @@ fn render_default_mode(f: &mut Frame, app: &mut App) {
     f.render_widget(definition, definition_area);
 }
 
-fn render_minimal_mode(f: &mut Frame, app: &mut App) {
+fn render_mono_mode(f: &mut Frame, app: &mut App) {
     let vertical = Layout::vertical([
         Constraint::Length(3),
         Constraint::Min(5),
-        Constraint::Length(1),
     ]);
-    let [input_area, definition_area, status_area] = vertical.areas(f.area());
+    let [input_area, definition_area] = vertical.areas(f.area());
 
     let input = Paragraph::new(app.input.as_str())
         .style(Style::default().fg(Color::LightCyan))
@@ -452,13 +465,6 @@ fn render_minimal_mode(f: &mut Frame, app: &mut App) {
         .scroll((app.scroll, 0))
         .wrap(Wrap { trim: true });
     f.render_widget(definition, definition_area);
-
-    let status = Paragraph::new(format!(
-        "db: {}",
-        app.databases.get(app.dictionary_index).unwrap()
-    ))
-    .block(Block::default());
-    f.render_widget(status, status_area);
 }
 
 #[cfg(feature = "leitner")]
