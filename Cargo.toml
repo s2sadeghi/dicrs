@@ -19,12 +19,12 @@ rusqlite = { version = "0.32.1", features = ["bundled"] }
 default = ["leitner", "clipboard"]
 leitner = []
 clipboard = ["dep:clipboard"]
-[build]
-rustflags = ["-C", "target-cpu=native"]
+# [build]
+# rustflags = ["-C", "target-cpu=native"]
 
-[profile.release]
-panic = "abort"
-opt-level = "z"
-strip = "symbols"
-codegen-units = 1
-lto = "fat"
+# [profile.release]
+# panic = "abort"
+# opt-level = "z"
+# strip = "symbols"
+# codegen-units = 1
+# lto = "fat"
